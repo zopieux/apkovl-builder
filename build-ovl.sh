@@ -173,8 +173,30 @@ if [ "${tmpdir_needs_mount}" = true ]; then
 else
     chmod 0755 "${root_dir}"
 fi
+
+# For cross-compilation with --arch. The chroot needs binfmt to be available.
+binfmt_mounted=false
+if [ -d /run/binfmt ]; then
+    mkdir -p -- "${root_dir}/run/binfmt"
+    mount --bind /run/binfmt "${root_dir}/run/binfmt"
+    binfmt_mounted=true
+fi
+
+# In NixOS systems, binfmt is a symlink to the /nix store.
+nix_store_mounted=false
+if [ -d /nix/store ]; then
+    mkdir -p -- "${root_dir}/nix/store"
+    mount --bind /nix/store "${root_dir}/nix/store"
+    nix_store_mounted=true
+fi
+
 # shellcheck disable=SC2064  # expanding the variables now is intended
-trap "[ '${tmpdir_needs_mount}' = true ] && umount -- '${root_dir}'; rm -rf -- '${tmpdir}'" EXIT INT TERM QUIT
+trap "
+    [ '${nix_store_mounted}' = true ] && umount -- '${root_dir}/nix/store'
+    [ '${binfmt_mounted}' = true ] && umount -- '${root_dir}/run/binfmt'
+    [ '${tmpdir_needs_mount}' = true ] && umount -- '${root_dir}'
+    rm -rf -- '${tmpdir}'
+" EXIT INT TERM QUIT
 
 if [ "${default_services}" = true ]; then
     # Enable all default services at boot.
@@ -346,4 +368,4 @@ rm -rf -- "${root_dir}/var/cache/apk/" "${root_dir}/etc/apk/" "${root_dir}/lib/a
 
 
 # Make an overlay package from the root directory.
-tar -czf "${output_file}" -C "${root_dir}" --exclude dev .
+tar -czf "${output_file}" -C "${root_dir}" --exclude dev --exclude run/binfmt --exclude nix/store .
